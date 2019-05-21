@@ -217,6 +217,7 @@ def identifyCPU(r):
 Result = collections.namedtuple('Result', 'benchType cpu mhz hwDate score srec benches')
 
 DISQUALIFIED_BENCHMARKS = [
+    # cpu2006
     '483.xalancbmk',
     '445.gobmk',
     '456.hmmer',
@@ -229,6 +230,21 @@ DISQUALIFIED_BENCHMARKS = [
     '436.cactusADM',
     '470.lbm',
     '410.bwaves',
+
+    # cpu2017
+    '657.xz_s',
+    '648.exchange2_s',
+    '625.x264_s',
+    '605.mcf_s',
+    '602.gcc_s',
+    '623.xalancbmk_s',
+
+    '603.bwaves_s',
+    '644.nab_s',
+    '607.cactuBSSN_s',
+    '638.imagick_s',
+    '654.roms_s',
+    '621.wrf_s',
 ]
 
 def iterCsvRecords(path, className):
@@ -328,9 +344,9 @@ def RenderGraph(mode, resultsByBrand, outPath):
     # If 1 pixel travels M months horizontally,
     # it should travel M*pixelAspect logScore points vertically,
     # and we fix the whole thing inside maxGraphSize.
-    maxGraphSize = (580.0, 380.0)
+    maxGraphSize = (1920.0, 1080.0)
     pixelAspect = 0.06   
-    minLogScore = -3
+    minLogScore = -6
     minDate = datetime.datetime(1995, 1, 1)
 
     # Calculate axis extents and actual graph size.
@@ -377,17 +393,18 @@ def RenderGraph(mode, resultsByBrand, outPath):
         ('f198dd', 'IBM POWER', triangle, 9),
         ('e040de', 'PowerPC', circle, 10),
         ('947b30', 'HP PA-RISC', circle, 15),
+        ('947b30', 'AMD EPYC', circle, 16),
     ]
     recognized = set([b[1] for b in brandColors])
 
     # Create surface and context.
     w, h = int(graphSize[0] + 40), int(graphSize[1] + 75)
-    if 'PIL' in globals():
-        surface = HQSurface(w, h)
-        cr = surface.cr
-    else:
-        surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, w, h)
-        cr = cairo.Context(surface)
+    #if 'PIL' in globals():
+    #    surface = HQSurface(w, h)
+    #    cr = surface.cr
+    #else:
+    surface = cairo.SVGSurface(outPath + ".svg", w, h)
+    cr = cairo.Context(surface)
     cr.set_line_width(1)
     cr.translate(28, 37)
     cr.set_source_rgb(1, 1, 1)
@@ -426,7 +443,14 @@ def RenderGraph(mode, resultsByBrand, outPath):
                     label = str(2 ** exp)
                     f = scoreFont
                 else:
-                    label = { -1: unichr(189), -2: unichr(188) }.get(exp, '')
+                    label = {
+                        -1: unichr(189),
+                        -2: unichr(188),
+                        -3: unichr(8539),
+                        -4: (unichr(0x00B9) + unichr(0x2044) + unichr(0x2081) + unichr(0x2086)).encode('utf-8'),
+                        -5: 'xxx',
+
+                    }.get(exp, '')
                     f = fractionFont
                 alignText(cr, f, 1, label, -6, y + 6)
             cr.move_to(0, y + .5)
@@ -527,7 +551,7 @@ with redirected_to_file('identified_cpus.txt'):
 
 # Scan INT benchmarks, then FP.
 for MODE in ['INT', 'FP']:
-    benchTypes = [t % MODE for t in ['C%s95', 'C%s2000', 'C%s2006']]
+    benchTypes = [t % MODE for t in ['C%s95', 'C%s2000', 'C%s2006', 'C%s2017']]
     
     # resultsByCPU: Maps CPUInfo to a list of results using that cpu.
     resultsByCPU = collections.defaultdict(list)
@@ -542,6 +566,7 @@ for MODE in ['INT', 'FP']:
     # available conversion ratios.
     ratio2000 = []
     ratio2006 = []
+    ratio2017 = []
     for cpu, results in resultsByCPU.iteritems():
         sliceByType = [[r.score for r in results if r.benchType == b] for b in benchTypes]
         if sliceByType[0] and sliceByType[1]:
@@ -550,9 +575,13 @@ for MODE in ['INT', 'FP']:
         if sliceByType[1] and sliceByType[2]:
             # We have a 2006/2000 conversion ratio for this CPU.
             ratio2006.append(geometricAverage(sliceByType[2]) / geometricAverage(sliceByType[1]))
+        if sliceByType[2] and sliceByType[3]:
+            # We have a 2017/2006 conversion ratio for this CPU.
+            ratio2017.append(geometricAverage(sliceByType[3]) / geometricAverage(sliceByType[2]))
     ratio2000 = geometricAverage(ratio2000)
     ratio2006 = geometricAverage(ratio2006)
-    conversionRatios = [ratio2000 * ratio2006, ratio2006, 1]
+    ratio2017 = geometricAverage(ratio2017)
+    conversionRatios = [ratio2000 * ratio2006 * ratio2017, ratio2006 * ratio2017, ratio2017, 1]
 
     # Group results by brand, convert scores and sort.
     resultsByBrand = collections.defaultdict(list)

@@ -213,16 +213,87 @@ def parse2006(path):
     testRecord = TestRecord(testID, tester, model, cpu, mhz, hwAvail, opSys, compiler, autoParallel, benchType, base, peak)
     return [testRecord], benches
 
+
+def parse2017(path):
+    testID = os.path.splitext(os.path.basename(path))[0]
+    lineIter = iter(open(path))
+    if '######################' in lineIter.next():
+        return [], []
+    model = lineIter.next().strip()
+    hwAvail = scanUntilLine(lineIter, 'Hardware availability: (.*)')
+    tester = scanUntilLine(lineIter, 'Tested by:    (.*?) *Software availability')
+    if model.startswith(tester):
+        model = model[len(tester):].strip()
+    for line in lineIter:
+        if line.startswith('=============================================================================='):
+            break
+        if 'SPEC has determined that this result does not comply' in line:
+            return [], []
+    benches = []
+    for line in lineIter:
+        m = re.match(' (SPEC.{27})  ', line)
+        if m:
+            benchType = m.group(1).strip()
+            break
+        benchName = line[:15].strip()
+        base = line[37:46].strip()
+        if len(line) < 70:
+            return [], []
+        peak = line[70:79].strip()
+        benches.append(BenchRecord(testID, benchName, base, peak))
+    if 'SPECrate' in benchType:
+        return [], []
+    benchType = {
+        'SPECspeed2017_int_base' : 'CINT2017',
+        'SPECspeed2017_fp_base' : 'CFP2017',
+
+    }[benchType]
+    base = line[33:43].strip()
+    peak = lineIter.next()[65:75].strip()
+    properties = {}
+    label = ''
+    for line in lineIter:
+        l = line.strip()
+        if l in ['HARDWARE', 'SOFTWARE', '--------']:
+            continue
+        if l == 'Submit Notes':
+            break
+        if line[20:21] == ':':
+            label = line[:20].strip()
+        desc = line[22:].strip()
+        if label and desc:
+            if label in properties:
+                properties[label] += ' ' + desc
+            else:
+                properties[label] = desc
+    cpu = properties['CPU Name']
+    mhz = float(properties['Nominal'])
+    opSys = properties['OS']
+    compiler = properties['Compiler']
+    autoParallel = properties['Parallel']
+
+    testRecord = TestRecord(testID, tester, model, cpu, mhz, hwAvail, opSys, compiler, autoParallel, benchType, base, peak)
+    return [testRecord], benches
+
 def iterRecords():
     allTests = []
-    
+
+    print "Collecting from cpu95"
     for fn in os.listdir(os.path.join('scraped', 'cpu95')):
         if fn.lower().endswith('.asc'):
             allTests.append((parse95, os.path.join('scraped', 'cpu95', fn)))
+    print "Collecting from cpu2000"
     for fn in os.listdir(os.path.join('scraped', 'cpu2000')):
         allTests.append((parse2000, os.path.join('scraped', 'cpu2000', fn)))
+    print
+    "Collecting from cpu2006"
     for fn in os.listdir(os.path.join('scraped', 'cpu2006')):
         allTests.append((parse2006, os.path.join('scraped', 'cpu2006', fn)))
+    print "Collecting from cpu2017"
+    for fn in os.listdir(os.path.join('scraped', 'cpu2017')):
+        allTests.append((parse2017, os.path.join('scraped', 'cpu2017', fn)))
+
+    print "Collected %d" % len(allTests)
     
     tests = []
     benches = []
